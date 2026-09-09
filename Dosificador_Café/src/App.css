@@ -65,6 +65,79 @@ body {
   border: 1px solid #433025;
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-menu {
+  position: relative;
+}
+
+.settings-button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #433025;
+  border-radius: 50%;
+  background: #2e2018;
+  color: #faedcd;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.settings-button:hover,
+.settings-button[aria-expanded="true"] {
+  background: #4a3327;
+  transform: rotate(20deg);
+}
+
+.settings-dropdown {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 220px;
+  padding: 6px;
+  background: #241913;
+  border: 1px solid #5a3b2b;
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+}
+
+.settings-dropdown button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #faedcd;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-dropdown button:hover {
+  background: #36241b;
+}
+
+.settings-dropdown span {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.settings-dropdown small {
+  color: #b08968;
+  font-size: 0.72rem;
+}
+
 .dot {
   width: 8px;
   height: 8px;
@@ -144,11 +217,31 @@ body {
 }
 
 .step-value {
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
   font-size: 1.8rem;
   font-weight: bold;
   color: #faedcd;
   min-width: 60px;
+  width: 60px;
   text-align: center;
+}
+
+.step-value:focus {
+  outline: 1px solid #d9a066;
+  border-radius: 4px;
+}
+
+.step-value::-webkit-inner-spin-button,
+.step-value::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.step-value {
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 .options-grid {
@@ -267,6 +360,46 @@ body {
   text-align: center;
 }
 
+.bag-progress-card {
+  padding: 14px 16px;
+  border-color: #9b6a45;
+  background: #21150f;
+}
+
+.bag-progress-value {
+  display: block;
+  margin: 4px 0 12px;
+  color: #f4c95d;
+  font-size: 1.9rem;
+  line-height: 1;
+}
+
+.bag-progress-value span {
+  color: #faedcd;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.bag-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #120c08;
+}
+
+.bag-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #e9c46a;
+  transition: width 0.3s ease;
+}
+
+@media (max-width: 480px) {
+  .stats-mini-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .stat-label {
   display: block;
   font-size: 0.7rem;
@@ -275,8 +408,9 @@ body {
 }
 
 .stat-val {
-  font-size: 0.95rem;
-  font-weight: bold;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
   color: #faedcd;
 }
 

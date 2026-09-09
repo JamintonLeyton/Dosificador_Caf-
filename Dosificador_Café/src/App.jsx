@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 
 export default function App() {
@@ -6,13 +6,15 @@ export default function App() {
   const [pantallaActual, setPantallaActual] = useState('SPLASH');
   
   // --- DATOS DEL MENÚ ---
-  const [bolsasSeleccionadas, setBolsasSeleccionadas] = useState(1);
+  const BOLSAS_MIN = 1;
+  const BOLSAS_DEFAULT = 5;
+  const [bolsasSeleccionadas, setBolsasSeleccionadas] = useState(BOLSAS_DEFAULT);
   const BOLSAS_MAX = 100;
 
-  const gramosOpciones = [60, 125, 250, 500];
+  const gramosOpciones = [60, 125, 250, 340, 500];
   const [gramosIndex, setGramosIndex] = useState(0);
 
-  const [bolsasRestantes, setBolsasRestantes] = useState(0);
+  const [bolsasCompletadas, setBolsasCompletadas] = useState(0);
   const [gramosObjetivo, setGramosObjetivo] = useState(0);
 
   // --- ESTADOS DE DOSIFICACIÓN ---
@@ -20,7 +22,8 @@ export default function App() {
   const [pesoActual, setPesoActual] = useState(0.0);
   const [motorVelocidad, setMotorVelocidad] = useState(0);
   const [servoAngulo, setServoAngulo] = useState(0); 
-  const [tiempoSplash, setTiempoSplash] = useState(0);
+  const [menuConfiguracionAbierto, setMenuConfiguracionAbierto] = useState(false);
+  const [compuertaEnEspera, setCompuertaEnEspera] = useState(false);
 
   // --- CONFIGURACIÓN DE PINES Y PARÁMETROS DEL BACKEND ---
   const PINS = {
@@ -36,6 +39,18 @@ export default function App() {
   const ANG_CERRADO = 0;
   const ANG_ABIERTO = 60;
   const TIEMPO_PUERTA_ABIERTA = 800; // ms
+  const TIEMPO_REINICIO_COMPUERTA = 600; // ms
+
+  const reiniciarProceso = () => {
+    setBolsasSeleccionadas(BOLSAS_DEFAULT);
+    setGramosIndex(0);
+    setBolsasCompletadas(0);
+    setGramosObjetivo(0);
+    setPesoActual(0);
+    setMotorVelocidad(0);
+    setServoAngulo(ANG_CERRADO);
+    setEstadoDosis('LLENANDO');
+  };
 
   // --- SIMULACIÓN DE BÁSCULA Y MOTOR L298N ---
   useEffect(() => {
@@ -44,6 +59,11 @@ export default function App() {
       interval = setInterval(() => {
         setPesoActual(prevPeso => {
           if (estadoDosis === 'LLENANDO') {
+            if (compuertaEnEspera) {
+              setMotorVelocidad(0);
+              return prevPeso;
+            }
+
             let margenLento = 70;
             let obj = gramosObjetivo;
             if (margenLento >= obj) {
@@ -55,7 +75,13 @@ export default function App() {
               setMotorVelocidad(V_BAJA);
             } else if (prevPeso >= obj) {
               setMotorVelocidad(0);
-              setEstadoDosis('ESPERANDO_DESCARGA');
+              setServoAngulo(ANG_CERRADO);
+              if (bolsasCompletadas >= Number(bolsasSeleccionadas) - 1) {
+                reiniciarProceso();
+                setPantallaActual('TERMINADO');
+              } else {
+                setEstadoDosis('ESPERANDO_DESCARGA');
+              }
               return obj;
             } else {
               setMotorVelocidad(V_ALTA);
@@ -67,11 +93,19 @@ export default function App() {
           return prevPeso;
         });
       }, 100);
-    } else {
-      setMotorVelocidad(0);
     }
     return () => clearInterval(interval);
-  }, [pantallaActual, estadoDosis, gramosObjetivo, motorVelocidad]);
+  }, [pantallaActual, estadoDosis, gramosObjetivo, motorVelocidad, bolsasCompletadas, bolsasSeleccionadas, compuertaEnEspera]);
+
+  useEffect(() => {
+    if (!compuertaEnEspera) return undefined;
+
+    const timer = setTimeout(() => {
+      setCompuertaEnEspera(false);
+    }, TIEMPO_REINICIO_COMPUERTA);
+
+    return () => clearTimeout(timer);
+  }, [compuertaEnEspera]);
 
   // --- MANEJO DE BOTONES FÍSICOS ---
   const handleButtonPress = (pin) => {
@@ -84,35 +118,36 @@ export default function App() {
         if (pin === PINS.BTN_NEXT) {
           // Suma de 5 en 5
           setBolsasSeleccionadas(prev => {
-            const val = Number(prev) || 1;
+            const val = Number(prev) || BOLSAS_MIN;
             return Math.min(val + 5, BOLSAS_MAX); 
           });
         } else if (pin === PINS.BTN_PREV) {
           // Resta de 5 en 5
           setBolsasSeleccionadas(prev => {
-            const val = Number(prev) || 1;
-            return Math.max(val - 5, 1);
+            const val = Number(prev) || BOLSAS_MIN;
+            return Math.max(val - 5, BOLSAS_MIN);
           });
         } else if (pin === PINS.BTN_OK) {
           // Si el usuario dejó el campo vacío por error y presionó OK, se asegura de enviar 1
-          setBolsasSeleccionadas(prev => (Number(prev) || 1));
+          setBolsasSeleccionadas(prev => (Number(prev) || BOLSAS_MIN));
           setPantallaActual('MENU_GRAMOS');
         } else if (pin === PINS.BTN_BACK) {
-          setBolsasSeleccionadas(1);
+          setBolsasSeleccionadas(BOLSAS_DEFAULT);
           setPantallaActual('SPLASH');
         }
         break;
         
       case 'MENU_GRAMOS':
         if (pin === PINS.BTN_NEXT) {
-          setGramosIndex(prev => (prev + 1) % 4);
+          setGramosIndex(prev => (prev + 1) % gramosOpciones.length);
         } else if (pin === PINS.BTN_PREV) {
-          setGramosIndex(prev => (prev - 1 + 4) % 4);
+          setGramosIndex(prev => (prev - 1 + gramosOpciones.length) % gramosOpciones.length);
         } else if (pin === PINS.BTN_OK) {
           const obj = gramosOpciones[gramosIndex];
           setGramosObjetivo(obj);
-          setBolsasRestantes(bolsasSeleccionadas);
+          setBolsasCompletadas(0);
           setPesoActual(0);
+          setServoAngulo(ANG_ABIERTO);
           setEstadoDosis('LLENANDO');
           setPantallaActual('DOSIFICANDO');
         } else if (pin === PINS.BTN_BACK) {
@@ -124,24 +159,25 @@ export default function App() {
         if (pin === PINS.BTN_OK) {
           setPesoActual(0);
         } else if (pin === PINS.BTN_BACK) {
-          setMotorVelocidad(0);
+          reiniciarProceso();
           setPantallaActual('MENU_BOLSAS');
         } else if (pin === PINS.BTN_DISPENSE) {
           if (estadoDosis === 'ESPERANDO_DESCARGA') {
+            const esUltimaBolsa = bolsasCompletadas >= bolsasSeleccionadas - 1;
             setEstadoDosis('SACANDO_CAFE');
             setServoAngulo(ANG_ABIERTO);
+            setBolsasCompletadas(prevCompletadas => prevCompletadas + 1);
 
             setTimeout(() => {
               setServoAngulo(ANG_CERRADO);
               setTimeout(() => {
                 setPesoActual(0);
-                const restantes = bolsasRestantes - 1;
-                setBolsasRestantes(restantes);
 
-                if (restantes <= 0) {
+                if (esUltimaBolsa) {
+                  reiniciarProceso();
                   setPantallaActual('TERMINADO');
-                  setTiempoSplash(Date.now());
                 } else {
+                  setServoAngulo(ANG_ABIERTO);
                   setEstadoDosis('LLENANDO');
                 }
               }, 400);
@@ -160,15 +196,35 @@ export default function App() {
     if (pantallaActual === 'TERMINADO') {
       timer = setTimeout(() => {
         setPantallaActual('MENU_BOLSAS');
-        setBolsasSeleccionadas(1);
       }, 3000);
     }
     return () => clearTimeout(timer);
   }, [pantallaActual]);
 
   // Cálculos para la interfaz moderna
-  const bolsaActualNum = Math.min(bolsasSeleccionadas - bolsasRestantes + 1, bolsasSeleccionadas);
-  const progresoTotal = Math.round(((bolsasSeleccionadas - bolsasRestantes) / bolsasSeleccionadas) * 100);
+  const bolsaActualNum = Math.min(bolsasCompletadas + 1, bolsasSeleccionadas);
+  const avanceBolsaActual = pantallaActual === 'DOSIFICANDO' && gramosObjetivo > 0
+    ? Math.min(pesoActual / gramosObjetivo, 1)
+    : 0;
+  const progresoTotal = Math.round(
+    ((bolsasCompletadas + avanceBolsaActual) / bolsasSeleccionadas) * 100
+  );
+
+  const ponerEnTara = () => {
+    setPesoActual(0);
+    setMenuConfiguracionAbierto(false);
+  };
+
+  const alternarCompuerta = () => {
+    if (servoAngulo > 0) {
+      setServoAngulo(ANG_CERRADO);
+      setCompuertaEnEspera(pantallaActual === 'DOSIFICANDO' && estadoDosis === 'LLENANDO');
+    } else {
+      setServoAngulo(ANG_ABIERTO);
+      setCompuertaEnEspera(false);
+    }
+    setMenuConfiguracionAbierto(false);
+  };
 
   return (
     <div className="app-container">
@@ -187,13 +243,40 @@ export default function App() {
             <p>Control de llenado de precisión</p>
           </div>
         </div>
-        <div className="header-status-badge">
-          <span className="dot"></span> 
-          {pantallaActual === 'SPLASH' && 'Listo para iniciar'}
-          {pantallaActual === 'MENU_BOLSAS' && 'Configurando Bolsas'}
-          {pantallaActual === 'MENU_GRAMOS' && 'Seleccionando Empaque'}
-          {pantallaActual === 'DOSIFICANDO' && (estadoDosis === 'ESPERANDO_DESCARGA' ? '¡LISTO PARA SACAR CAFÉ!' : 'Dosificando en proceso...')}
-          {pantallaActual === 'TERMINADO' && 'Proceso Terminando'}
+        <div className="header-controls">
+          <div className="header-status-badge">
+            <span className="dot"></span> 
+            {pantallaActual === 'SPLASH' && 'Listo para iniciar'}
+            {pantallaActual === 'MENU_BOLSAS' && 'Configurando Bolsas'}
+            {pantallaActual === 'MENU_GRAMOS' && 'Seleccionando Empaque'}
+            {pantallaActual === 'DOSIFICANDO' && (estadoDosis === 'ESPERANDO_DESCARGA' ? '¡LISTO PARA SACAR CAFÉ!' : 'Dosificando en proceso...')}
+            {pantallaActual === 'TERMINADO' && 'Proceso Terminando'}
+          </div>
+          {pantallaActual !== 'SPLASH' && (
+            <div className="settings-menu">
+              <button
+                className="settings-button"
+                type="button"
+                aria-label="Abrir menú de configuración"
+                aria-expanded={menuConfiguracionAbierto}
+                onClick={() => setMenuConfiguracionAbierto(prevAbierto => !prevAbierto)}
+              >
+                ⚙
+              </button>
+              {menuConfiguracionAbierto && (
+                <div className="settings-dropdown" role="menu">
+                  <button type="button" role="menuitem" onClick={ponerEnTara}>
+                    <span>TARA</span>
+                    <small>Poner báscula en 0 g</small>
+                  </button>
+                  <button type="button" role="menuitem" onClick={alternarCompuerta}>
+                    <span>{servoAngulo > 0 ? 'Cerrar compuerta' : 'Abrir compuerta'}</span>
+                    <small>Servo: {servoAngulo > 0 ? 'abierto' : 'cerrado'}</small>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -206,7 +289,7 @@ export default function App() {
           style={{ width: '180px', height: 'auto', margin: '0 auto 15px auto', display: 'block', objectFit: 'contain' }}
           />
           <button className="btn-main-action" onClick={() => handleButtonPress(PINS.BTN_OK)}>
-            Presione OK (Pin 13) para Iniciar
+            Presione para Iniciar
           </button>
         </div>
       )}
@@ -214,7 +297,7 @@ export default function App() {
       {pantallaActual === 'TERMINADO' && (
         <div className="splash-card">
           <h2>PROCESO TERMINADO</h2>
-          <p>{bolsasSeleccionadas} BOLSAS EMPACADAS EXITOSAMENTE</p>
+          <p>Pedido completado exitosamente</p>
         </div>
       )}
 
@@ -231,12 +314,24 @@ export default function App() {
                 <label className="input-label">¿Cuántas bolsas necesitas?</label>
                 <div className="stepper-control">
                   <button className="step-btn" onClick={() => handleButtonPress(PINS.BTN_PREV)}>-</button>
-                  <span className="step-value">{bolsasSeleccionadas}</span>
+                  <input
+                    className="step-value"
+                    type="number"
+                    min={BOLSAS_MIN}
+                    max={BOLSAS_MAX}
+                    value={bolsasSeleccionadas}
+                    onChange={(event) => setBolsasSeleccionadas(event.target.value)}
+                    onBlur={() => setBolsasSeleccionadas(prev => {
+                      const value = Number(prev);
+                      return Math.min(Math.max(value || BOLSAS_MIN, BOLSAS_MIN), BOLSAS_MAX);
+                    })}
+                    aria-label="Número de bolsas"
+                  />
                   <button className="step-btn" onClick={() => handleButtonPress(PINS.BTN_NEXT)}>+</button>
                 </div>
                 <div className="actions-row">
                   <button className="btn-secondary" onClick={() => handleButtonPress(PINS.BTN_BACK)}>Reiniciar</button>
-                  <button className="btn-primary" onClick={() => handleButtonPress(PINS.BTN_OK)}>Confirmar (OK)</button>
+                  <button className="btn-primary" onClick={() => handleButtonPress(PINS.BTN_OK)}>Confirmar</button>
                 </div>
               </div>
             )}
@@ -257,7 +352,7 @@ export default function App() {
                 </div>
                 <div className="actions-row">
                   <button className="btn-secondary" onClick={() => handleButtonPress(PINS.BTN_BACK)}>Atrás</button>
-                  <button className="btn-primary" onClick={() => handleButtonPress(PINS.BTN_OK)}>Iniciar Llenado (OK)</button>
+                  <button className="btn-primary" onClick={() => handleButtonPress(PINS.BTN_OK)}>Iniciar Llenado</button>
                 </div>
               </div>
             )}
@@ -273,11 +368,9 @@ export default function App() {
                   <strong>{bolsasSeleccionadas} unids</strong>
                 </div>
                 <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', color: '#faedcd' }}>
-                  <span>Motor L298N (ENA):</span>
-                  <strong>{motorVelocidad} PWM</strong>
                 </div>
                 <button className="btn-danger-outline" onClick={() => handleButtonPress(PINS.BTN_BACK)}>
-                  Cancelar Proceso (Back)
+                  Cancelar Proceso
                 </button>
               </div>
             )}
@@ -297,12 +390,15 @@ export default function App() {
             </div>
 
             <div className="stats-mini-grid">
-              <div className="mini-stat-card">
-                <span className="stat-label">Bolsas Llenadas</span>
-                <span className="stat-val">{bolsaActualNum} de {bolsasSeleccionadas}</span>
+              <div className="mini-stat-card bag-progress-card">
+                <span className="stat-label">Bolsa en proceso</span>
+                <strong className="bag-progress-value">{bolsaActualNum} <span>de {bolsasSeleccionadas}</span></strong>
+                <div className="bag-progress-track" aria-hidden="true">
+                  <div className="bag-progress-fill" style={{ width: `${progresoTotal}%` }}></div>
+                </div>
               </div>
               <div className="mini-stat-card">
-                <span className="stat-label">Progreso Total</span>
+                <span className="stat-label">Progreso del pedido</span>
                 <span className="stat-val">{progresoTotal}%</span>
               </div>
             </div>
@@ -310,7 +406,7 @@ export default function App() {
             <div className="status-indicators">
               <div className={`indicator-pill ${servoAngulo > 0 ? 'open' : ''}`}>
                 <span>Compuerta:</span>
-                <strong>{servoAngulo > 0 ? 'ABIERTA (60°)' : 'CERRADA (0°)'}</strong>
+                <strong>{servoAngulo > 0 ? 'ABIERTA' : 'CERRADA'}</strong>
               </div>
               
               <div className={`indicator-pill ${estadoDosis === 'ESPERANDO_DESCARGA' ? 'ready-action' : ''}`}>
@@ -326,7 +422,7 @@ export default function App() {
                 onClick={() => handleButtonPress(PINS.BTN_DISPENSE)}
                 disabled={estadoDosis !== 'ESPERANDO_DESCARGA'}
               >
-                📥 BTN_DISPENSE (Pin 32): Sacar Café
+                📥 Dispensar Café
               </button>
             )}
           </div>
